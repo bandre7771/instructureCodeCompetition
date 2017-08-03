@@ -52,6 +52,37 @@ def print_board(game)
   end
 end
 
+def winning_move?(grid, move)
+  new_grid = grid.dup
+  new_grid[move] = true
+  win_conditions = [[0, 4, 8], [2, 4, 6], [0, 3, 6], [2, 5, 8], [0, 1, 2], [6, 7, 8], [1, 4, 7], [3, 4, 5]]
+  valid_win_conditions = win_conditions.select { |row| row.include?(move) }
+  valid_win_conditions.any? { |row|
+    row.all?{ |index| new_grid[index] }
+  }
+end
+
+def coerce_cells(cells, player)
+  cells.flatten.map { |cell| cell == player["token"] }
+end
+
+def coerce_boards(boards, player)
+  boards.map{ |board|
+    winner = board["winner"]
+    winner && winner["name"] == player
+  }
+end
+
+def preferred_cell_move(cells)
+  corners = [0, 2, 6, 8]
+  middle = [4]
+  sides = [1, 3, 5, 7]
+
+  cells.find_index{ |index| index.nil? && corners.include?(index) } ||
+  cells.find_index{ |index| index.nil? && middle.include?(index) } ||
+  cells.find_index{ |index| index.nil? && sides.include?(index) }
+end
+
 http_client = Net::HTTP.new("tictactoe.inseng.net", 80)
 options = {}
 
@@ -92,8 +123,8 @@ loop do
   puts "Board Index: #{board_index}"
   cells = board["rows"].flatten
   cell_grid = coerce_cells(cells, game["currentPlayer"])
-  cell = cells.find_index { |index|
-    !!index.nil? && winning_move?(cell_grid, index)
+  cell = cells.find_index.with_index { |cell_value, index|
+    !!cell_value.nil? && winning_move?(cell_grid, index)
   }
   cell = preferred_cell_move(cells) if cell.nil?
   puts cell
@@ -101,36 +132,6 @@ loop do
   game = play(http_client, game["id"], game["currentPlayer"]["secret"], board_index, cell)
 end
 
-def winning_move?(grid, move)
-  new_grid = grid.dup
-  new_grid[move] = true
-  win_conditions = [[0, 4, 8], [2, 4, 6], [0, 3, 6], [2, 5, 8], [0, 1, 2], [6, 7, 8], [1, 4, 7], [3, 4, 5]]
-  valid_win_conditions = win_conditions.select { |row| row.include?(move) }
-  valid_win_conditions.any? { |row|
-    row.all?{ |index| new_grid[index] }
-  }
-end
-
-def coerce_cells(cells, player)
-  cells.flatten.map { |cell| cell == player["token"] }
-end
-
-def coerce_boards(boards, player)
-  boards.map{ |board|
-    winner = board["winner"]
-    winner && winner["name"] == player
-  }
-end
-
-def preferred_cell_move(cells)
-  corners = [0, 2, 6, 8]
-  middle = [4]
-  sides = [1, 3, 5, 7]
-
-  cells.find_index{ |index| index.nil? && corners.include?(index) } ||
-  cells.find_index{ |index| index.nil? && middle.include?(index) } ||
-  cells.find_index{ |index| index.nil? && sides.include?(index) }
-end
 
 
 
