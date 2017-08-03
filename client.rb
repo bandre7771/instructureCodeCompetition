@@ -4,7 +4,9 @@ require "json"
 require "net/http"
 require "optparse"
 
-
+@corners = [0]
+@middle = [4]
+@sides = [1]
 
 def create_game(client)
   req = Net::HTTP::Post.new("/games", "Content-Type" => "application/json")
@@ -84,13 +86,21 @@ def coerce_boards(boards, player)
 end
 
 def preferred_move(grid)
-  corners = [0, 2, 6, 8]
-  middle = [4]
-  sides = [1, 3, 5, 7]
+  if @corners > 8
+    @corners = 0
+  end
 
-  grid.find_index.with_index{ |valid, index| valid && corners.include?(index) } ||
-  grid.find_index.with_index{ |valid, index| valid && sides.include?(index) } ||
-  grid.find_index.with_index{ |valid, index| valid && middle.include?(index) }
+  if @corners == 4
+    @corners = 6
+  end
+
+  if @sides > 7
+    @sides = 1
+  end
+
+  grid.find_index.with_index{ |valid, index| valid && @corners.include?(index) } ||
+  grid.find_index.with_index{ |valid, index| valid && @sides.include?(index) } ||
+  grid.find_index.with_index{ |valid, index| valid && @middle.include?(index) }
 end
 
 def win_in_cells?(cells, grid)
@@ -178,6 +188,10 @@ loop do
     puts "is defensive move? #{!cell.nil?}"
   end
   cell = preferred_move(coerce_playable_cells(cells)) if cell.nil?
+  if cell % 2 == 0
+    @corner += 2
+  else
+    @side += 2
   puts "cell after preferred_cell_move #{cell}"
 
   game = play(http_client, game["id"], player["secret"], board_index, cell)
