@@ -4,6 +4,8 @@ require "json"
 require "net/http"
 require "optparse"
 
+
+
 def create_game(client)
   req = Net::HTTP::Post.new("/games", "Content-Type" => "application/json")
   res = client.request(req)
@@ -71,6 +73,7 @@ player_name = options[:player_name]
 game_id     = options[:game] ? options[:game] : create_game(http_client)
 
 game = join_game(http_client, player_name, game_id, options[:auto])
+puts "Game starte: #{game}"
 loop do
   print_board(game)
   break if game["state"] != "inProgress"
@@ -79,16 +82,57 @@ loop do
   boards = game["boards"]
 
   # TODO: your logic here. you should assign values to `board` and `cell`
-  board = if next_board
-    boards[next_board]
+  if next_board
+    board = boards[next_board]
+    board_index = next_board
   else
-    boards.find { |board| !!board["playable"] }
+    board_index = boards.find_index { |board| !!board["playable"] }
+    board = boards[board_index]
   end
+  puts "Board Index: #{board_index}"
   cells = board["rows"].flatten
-  cell = cells.find_index { |index| !index.nil? }
+  cell_grid = coerce_cells(cells, game["currentPlayer"])
+  cell = cells.find_index { |index|
+    !!index.nil? && winning_move?(cell_grid, index)
+  }
+  cell = preferred_cell_move(cells) if cell.nil?
+  puts cell
 
-  game = play(http_client, game["id"], game["currentPlayer"]["secret"], board, cell)
+  game = play(http_client, game["id"], game["currentPlayer"]["secret"], board_index, cell)
 end
+
+def winning_move?(grid, move)
+  new_grid = grid.dup
+  new_grid[move] = true
+  win_conditions = [[0, 4, 8], [2, 4, 6], [0, 3, 6], [2, 5, 8], [0, 1, 2], [6, 7, 8], [1, 4, 7], [3, 4, 5]]
+  valid_win_conditions = win_conditions.select { |row| row.include?(move) }
+  valid_win_conditions.any? { |row|
+    row.all?{ |index| new_grid[index] }
+  }
+end
+
+def coerce_cells(cells, player)
+  cells.flatten.map { |cell| cell == player["token"] }
+end
+
+def coerce_boards(boards, player)
+  boards.map{ |board|
+    winner = board["winner"]
+    winner && winner["name"] == player
+  }
+end
+
+def preferred_cell_move(cells)
+  corners = [0, 2, 6, 8]
+  middle = [4]
+  sides = [1, 3, 5, 7]
+
+  cells.find_index{ |index| index.nil? && corners.include?(index) } ||
+  cells.find_index{ |index| index.nil? && middle.include?(index) } ||
+  cells.find_index{ |index| index.nil? && sides.include?(index) }
+end
+
+
 
 puts "Game state: #{game["state"]}"
 puts "Game winner: #{game["winner"] ? game["winner"]["name"] : "None"}"
