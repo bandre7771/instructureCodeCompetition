@@ -66,6 +66,16 @@ def coerce_cells(cells, player)
   cells.flatten.map { |cell| cell == player["token"] }
 end
 
+def coerce_playable_boards(boards)
+  boards.map{ |board|
+    board["playable"]
+  }
+end
+
+def coerce_playable_cells(cells)
+  cells.flatten.map { |cell| cell.nil? }
+end
+
 def coerce_boards(boards, player)
   boards.map{ |board|
     winner = board["winner"]
@@ -73,14 +83,20 @@ def coerce_boards(boards, player)
   }
 end
 
-def preferred_cell_move(cells)
+def preferred_move(grid)
   corners = [0, 2, 6, 8]
   middle = [4]
   sides = [1, 3, 5, 7]
 
-  cells.find_index{ |index| index.nil? && corners.include?(index) } ||
-  cells.find_index{ |index| index.nil? && middle.include?(index) } ||
-  cells.find_index{ |index| index.nil? && sides.include?(index) }
+  grid.find_index.with_index{ |valid, index| valid && corners.include?(index) } ||
+  grid.find_index.with_index{ |valid, index| valid && sides.include?(index) } ||
+  grid.find_index.with_index{ |valid, index| valid && middle.include?(index) }
+end
+
+def win_in_cells?(cells, grid)
+  cells.find_index.with_index { |value, index|
+    value.nil? && winning_move?(grid, index)
+  }
 end
 
 http_client = Net::HTTP.new("tictactoe.inseng.net", 80)
@@ -103,6 +119,7 @@ end.parse!
 player_name = options[:player_name]
 game_id     = options[:game] ? options[:game] : create_game(http_client)
 
+iterations = 0
 game = join_game(http_client, player_name, game_id, options[:auto])
 puts "Game starte: #{game}"
 loop do
@@ -111,25 +128,60 @@ loop do
 
   next_board = game["nextBoard"]
   boards = game["boards"]
+  player = game["currentPlayer"]
+  opponent = game["players"].find { |p| player["name"] != p["name"]}
 
   # TODO: your logic here. you should assign values to `board` and `cell`
   if next_board
     board = boards[next_board]
     board_index = next_board
   else
-    board_index = boards.find_index { |board| !!board["playable"] }
+    board_grid = coerce_boards(boards, player)
+    board_index = boards.find_index.with_index { |value, index|
+      value["playable"] && winning_move?(board_grid, index)
+    }
+    puts "is winning board? #{!board_index.nil?}"
+    if board_index.nil?
+      defensive_board_grid = coerce_boards(boards, opponent)
+      board_index = boards.find_index.with_index { |value, index|
+        value["playable"] && winning_move?(defensive_board_grid, index)
+      }
+      puts "is defender board? #{!board_index.nil?}"
+    end
+    if board_index.nil?
+      board_index = boards.find_index { |b|
+        c = b["rows"].flatten
+        b["playable"] && win_in_cells?(c, coerce_cells(c, player))
+      }
+      puts "found a winning board? #{!board_index.nil?}"
+    end
+
+    if board_index.nil?
+      board_index = boards.find_index { |b|
+        c = b["rows"].flatten
+        b["playable"] && win_in_cells?(c, coerce_cells(c, opponent))
+      }
+      puts "found a defensive winning board? #{!board_index.nil?}"
+    end
+
+    board_index = preferred_move(coerce_playable_boards(boards)) if board_index.nil?
     board = boards[board_index]
   end
   puts "Board Index: #{board_index}"
   cells = board["rows"].flatten
-  cell_grid = coerce_cells(cells, game["currentPlayer"])
-  cell = cells.find_index.with_index { |cell_value, index|
-    !!cell_value.nil? && winning_move?(cell_grid, index)
-  }
-  cell = preferred_cell_move(cells) if cell.nil?
-  puts cell
+  cell_grid = coerce_cells(cells, player)
+  cell = win_in_cells?(cells, cell_grid)
+  puts "is winning move? #{!cell.nil?}"
+  if cell.nil?
+    defensive_cell_grid = coerce_cells(cells, opponent)
+    cell = win_in_cells?(cells, defensive_cell_grid)
+    puts "is defensive move? #{!cell.nil?}"
+  end
+  cell = preferred_move(coerce_playable_cells(cells)) if cell.nil?
+  puts "cell after preferred_cell_move #{cell}"
 
-  game = play(http_client, game["id"], game["currentPlayer"]["secret"], board_index, cell)
+  game = play(http_client, game["id"], player["secret"], board_index, cell)
+  iterations += 1
 end
 
 
@@ -137,3 +189,4 @@ end
 
 puts "Game state: #{game["state"]}"
 puts "Game winner: #{game["winner"] ? game["winner"]["name"] : "None"}"
+puts "Took #{iterations} moves"
